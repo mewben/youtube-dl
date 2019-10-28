@@ -51,7 +51,9 @@ class TwitchBaseIE(InfoExtractor):
                 expected=True)
 
     def _call_api(self, path, item_id, *args, **kwargs):
-        kwargs.setdefault('headers', {})['Client-ID'] = self._CLIENT_ID
+        headers = kwargs.get('headers', {}).copy()
+        headers['Client-ID'] = self._CLIENT_ID
+        kwargs['headers'] = headers
         response = self._download_json(
             '%s/%s' % (self._API_BASE, path), item_id,
             *args, **compat_kwargs(kwargs))
@@ -132,9 +134,14 @@ class TwitchBaseIE(InfoExtractor):
     def _prefer_source(self, formats):
         try:
             source = next(f for f in formats if f['format_id'] == 'Source')
-            source['preference'] = 10
+            source['quality'] = 10
         except StopIteration:
-            pass  # No Source stream present
+            for f in formats:
+                if '/chunked/' in f['url']:
+                    f.update({
+                        'quality': 10,
+                        'format_note': 'Source',
+                    })
         self._sort_formats(formats)
 
 
@@ -241,7 +248,7 @@ class TwitchVodIE(TwitchItemBaseIE):
                     https?://
                         (?:
                             (?:(?:www|go|m)\.)?twitch\.tv/(?:[^/]+/v(?:ideo)?|videos)/|
-                            player\.twitch\.tv/\?.*?\bvideo=v
+                            player\.twitch\.tv/\?.*?\bvideo=v?
                         )
                         (?P<id>\d+)
                     '''
@@ -299,6 +306,9 @@ class TwitchVodIE(TwitchItemBaseIE):
     }, {
         'url': 'https://www.twitch.tv/northernlion/video/291940395',
         'only_matching': True,
+    }, {
+        'url': 'https://player.twitch.tv/?video=480452374',
+        'only_matching': True,
     }]
 
     def _real_extract(self, url):
@@ -310,7 +320,7 @@ class TwitchVodIE(TwitchItemBaseIE):
             'Downloading %s access token' % self._ITEM_TYPE)
 
         formats = self._extract_m3u8_formats(
-            '%s/vod/%s?%s' % (
+            '%s/vod/%s.m3u8?%s' % (
                 self._USHER_BASE, item_id,
                 compat_urllib_parse_urlencode({
                     'allow_source': 'true',
